@@ -56,7 +56,9 @@ export interface ProjectInfo {
 
 export interface HealthStatus {
   status: string;
-  ai_available: boolean;
+  ai_provider?: 'groq' | 'ollama' | 'demo';
+  ai_online?: boolean;
+  ai_available?: boolean;
   model: string;
   fallback: boolean;
   demo_project?: string;

@@ -21,7 +21,7 @@ class AnalyzeRequest(BaseModel):
 async def analyze_error(request: Request, body: AnalyzeRequest):
     """
     Analyze an error using AI with codebase context retrieval.
-    Includes full timing metrics logging.
+    Includes full timing metrics logging and explicit HTTP error mapping.
     """
     t_start = time.time()
     logger.info("[ANALYZE] request received")
@@ -53,12 +53,16 @@ async def analyze_error(request: Request, body: AnalyzeRequest):
     except Exception as e:
         err_msg = str(e)
         logger.error(f"[ANALYZE] Provider failed: {err_msg}")
+        if "AUTHENTICATION ERROR" in err_msg:
+            raise HTTPException(status_code=401, detail="AI PROVIDER AUTHENTICATION ERROR")
+        if "RATE LIMIT" in err_msg:
+            raise HTTPException(status_code=429, detail="AI RATE LIMIT REACHED")
         if "TIMED OUT" in err_msg:
-            raise HTTPException(status_code=504, detail="LOCAL AI REQUEST TIMED OUT")
+            raise HTTPException(status_code=504, detail="AI REQUEST TIMED OUT")
         if "MODEL NOT FOUND" in err_msg:
             raise HTTPException(status_code=404, detail="MODEL NOT FOUND")
         if "UNAVAILABLE" in err_msg:
-            raise HTTPException(status_code=503, detail="LOCAL AI UNAVAILABLE")
+            raise HTTPException(status_code=503, detail="AI PROVIDER TEMPORARILY UNAVAILABLE")
         if "COULD NOT BE PARSED" in err_msg:
             raise HTTPException(status_code=422, detail="AI RESPONSE COULD NOT BE PARSED")
         raise HTTPException(status_code=500, detail=f"ANALYSIS ERROR: {err_msg}")

@@ -26,9 +26,10 @@ export function HomeScreen() {
   useEffect(() => {
     api.health()
       .then(h => {
-        setHealth(h);
-        setAiAvailable(h.ai_available);
-        setAiModel(h.model);
+        const isOnline = h.ai_online !== undefined ? h.ai_online : Boolean(h.ai_available);
+        setHealth({ ai_available: isOnline, model: h.model || 'default', fallback: Boolean(h.fallback) });
+        setAiAvailable(isOnline);
+        setAiModel(h.model || 'default');
       })
       .catch(() => setHealthError(true));
   }, [setAiAvailable, setAiModel]);

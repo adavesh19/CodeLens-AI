@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import type { AnalysisResult } from '../api/types';
 
 export function AnalysisScreen() {
-  const { setScreen, errorText, setAnalysisResult, analysisResult, aiAvailable, aiModel, selectedFile, setSelectedFile } = useApp();
+  const { setScreen, errorText, setAnalysisResult, analysisResult, backendConnected, aiProvider, aiModel, selectedFile, setSelectedFile, checkHealth } = useApp();
   const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState('');
   const [projectFiles, setProjectFiles] = useState<string[]>([]);
@@ -34,13 +34,13 @@ export function AnalysisScreen() {
 
     async function doAnalyze() {
       if (isMounted) setLoadingStep(1);
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 300));
 
       if (isMounted) setLoadingStep(2);
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 300));
 
       if (isMounted) setLoadingStep(3);
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 400));
 
       if (isMounted) setLoadingStep(4);
 
@@ -76,23 +76,29 @@ export function AnalysisScreen() {
     return () => { isMounted = false; };
   }, [errorText, analysisResult, setAnalysisResult, selectedFile, setSelectedFile]);
 
-  // Context-aware Error Screen (Requirement 21)
+  // Context-aware Error Screen (STEP 17)
   if (error) {
     let title = "ANALYSIS FAILED";
     let desc = error;
 
-    if (error.includes("TIMED OUT")) {
-      title = "LOCAL AI REQUEST TIMED OUT";
-      desc = "Local LLM inference took longer than 150s. Ensure Ollama is warm and retry.";
-    } else if (error.includes("UNAVAILABLE")) {
-      title = "LOCAL AI UNAVAILABLE";
-      desc = "Could not connect to Ollama at http://localhost:11434 or backend on port 8000.";
-    } else if (error.includes("MODEL NOT FOUND")) {
-      title = "MODEL NOT FOUND";
-      desc = `Model '${aiModel}' is not pulled in Ollama. Run: ollama pull ${aiModel}`;
+    if (error.includes("AUTHENTICATION ERROR")) {
+      title = "AI PROVIDER AUTHENTICATION ERROR";
+      desc = "Server GROQ_API_KEY is invalid or missing.";
+    } else if (error.includes("RATE LIMIT")) {
+      title = "AI RATE LIMIT REACHED";
+      desc = "Cloud AI rate limit reached. Please wait a moment and try again.";
+    } else if (error.includes("TIMED OUT")) {
+      title = "AI REQUEST TIMED OUT";
+      desc = "AI inference request took longer than expected. Click Retry to try again.";
+    } else if (error.includes("BACKEND OFFLINE")) {
+      title = "BACKEND OFFLINE";
+      desc = "Could not connect to CodeLens AI backend API. Please ensure the backend is running.";
+    } else if (error.includes("TEMPORARILY UNAVAILABLE")) {
+      title = "BACKEND TEMPORARILY UNAVAILABLE";
+      desc = "The backend service is starting up or temporarily busy.";
     } else if (error.includes("COULD NOT BE PARSED")) {
       title = "AI RESPONSE COULD NOT BE PARSED";
-      desc = "Model returned unparseable output format.";
+      desc = "The AI model output could not be formatted into structured JSON.";
     }
 
     return (
@@ -104,7 +110,7 @@ export function AnalysisScreen() {
           <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setScreen('home')}>
             Home
           </button>
-          <button className="btn btn-yellow" style={{ flex: 1.5 }} onClick={() => { setError(''); setAnalysisResult(null); }}>
+          <button className="btn btn-yellow" style={{ flex: 1.5 }} onClick={() => { setError(''); setAnalysisResult(null); checkHealth(); }}>
             Retry Analysis
           </button>
         </div>
@@ -112,18 +118,31 @@ export function AnalysisScreen() {
     );
   }
 
-  // Loading Screen (Requirement 9: LOCAL AI ANALYZING...)
+  // Loading Screen with Render Cold Start Notice (STEP 18)
   if (!analysisResult) {
+    const isConnecting = !backendConnected;
     return (
       <div className="screen-content flex flex-col items-center justify-center h-full">
         <div style={{ width: '100%', maxWidth: 320, textAlign: 'center' }}>
           <div style={{ marginBottom: 24 }}>
             <div style={{ fontSize: 36, marginBottom: 8 }}>⚡</div>
             <div className="text-lg font-black" style={{ color: 'var(--yellow)', letterSpacing: '0.04em' }}>
-              {aiAvailable ? 'LOCAL AI ANALYZING...' : 'DEMO ENGINE ANALYZING...'}
+              {isConnecting
+                ? 'CONNECTING TO CODELENS ENGINE...'
+                : aiProvider === 'groq'
+                ? 'CLOUD AI ANALYZING...'
+                : aiProvider === 'ollama'
+                ? 'LOCAL AI ANALYZING...'
+                : 'DEMO ENGINE ANALYZING...'}
             </div>
             <div className="text-xs text-muted" style={{ marginTop: 4 }}>
-              {aiAvailable ? `Running ${aiModel} local inference via Ollama` : 'Evaluating error context against demo rules'}
+              {isConnecting
+                ? 'Waking backend server instance...'
+                : aiProvider === 'groq'
+                ? `Running ${aiModel} cloud inference via Groq`
+                : aiProvider === 'ollama'
+                ? `Running ${aiModel} local inference via Ollama`
+                : 'Evaluating error context against demo rules'}
             </div>
           </div>
 
@@ -148,10 +167,29 @@ export function AnalysisScreen() {
     );
   }
 
-  const isFallback = analysisResult.provider === 'deterministic_fallback' || !aiAvailable;
+  const isDemoFallback = analysisResult.provider === 'demo' || aiProvider === 'demo';
+  const isGroqCloud = analysisResult.provider === 'groq' || aiProvider === 'groq';
   const currentTargetFile = (analysisResult.affected_file && !analysisResult.affected_file.toLowerCase().includes('unknown'))
     ? analysisResult.affected_file
     : selectedFile;
+
+  let badgeLabel = `LOCAL AI • ONLINE (${analysisResult.model || aiModel})`;
+  let badgeStyle = {
+    background: 'rgba(34,211,238,0.12)',
+    color: 'var(--cyan)',
+    border: '1px solid rgba(34,211,238,0.3)'
+  };
+
+  if (isGroqCloud) {
+    badgeLabel = `CLOUD AI • ONLINE (${analysisResult.model || aiModel})`;
+  } else if (isDemoFallback) {
+    badgeLabel = 'DEMO ENGINE • OFFLINE AI';
+    badgeStyle = {
+      background: 'rgba(245,200,66,0.12)',
+      color: 'var(--yellow)',
+      border: '1px solid rgba(245,200,66,0.25)'
+    };
+  }
 
   return (
     <div className="screen-content">
@@ -165,11 +203,9 @@ export function AnalysisScreen() {
           fontWeight: 700,
           padding: '2px 8px',
           borderRadius: 4,
-          background: isFallback ? 'rgba(245,200,66,0.12)' : 'rgba(34,211,238,0.12)',
-          color: isFallback ? 'var(--yellow)' : 'var(--cyan)',
-          border: `1px solid ${isFallback ? 'rgba(245,200,66,0.25)' : 'rgba(34,211,238,0.3)'}`
+          ...badgeStyle
         }}>
-          {isFallback ? 'DEMO ENGINE • OFFLINE AI' : `LOCAL AI • ONLINE (${analysisResult.model || aiModel})`}
+          {badgeLabel}
         </span>
       </div>
 

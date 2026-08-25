@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { AnalysisResult, TestResults } from '../api/types';
+import { api } from '../api/client';
 
 export type Screen = 'home' | 'camera' | 'voice' | 'input' | 'analysis' | 'patch' | 'tests' | 'success';
+export type AIProvider = 'groq' | 'ollama' | 'demo' | 'offline';
 
 interface AppState {
   // Navigation
@@ -36,13 +38,21 @@ interface AppState {
   demoMode: boolean;
   setDemoMode: (v: boolean) => void;
 
-  // AI availability
+  // AI & Backend Connectivity Status
+  backendConnected: boolean;
+  setBackendConnected: (v: boolean) => void;
+
+  aiProvider: AIProvider;
+  setAiProvider: (p: AIProvider) => void;
+
   aiAvailable: boolean;
   setAiAvailable: (v: boolean) => void;
 
-  // Ollama model name
   aiModel: string;
   setAiModel: (v: string) => void;
+
+  // Manual status check
+  checkHealth: () => Promise<void>;
 
   // Full session reset
   resetSession: () => void;
@@ -59,8 +69,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [testResults, setTestResults] = useState<TestResults | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
+  const [backendConnected, setBackendConnected] = useState(false);
+  const [aiProvider, setAiProvider] = useState<AIProvider>('offline');
   const [aiAvailable, setAiAvailable] = useState(false);
-  const [aiModel, setAiModel] = useState('fallback');
+  const [aiModel, setAiModel] = useState('connecting...');
+
+  const checkHealth = useCallback(async () => {
+    try {
+      const res = await api.health();
+      setBackendConnected(true);
+
+      const provider = res.ai_provider || (res.ai_available ? 'ollama' : 'demo');
+      const isOnline = res.ai_online !== undefined ? res.ai_online : Boolean(res.ai_available);
+
+      setAiProvider(provider);
+      setAiAvailable(isOnline);
+      setAiModel(res.model || 'default');
+    } catch {
+      setBackendConnected(false);
+      setAiProvider('offline');
+      setAiAvailable(false);
+      setAiModel('unreachable');
+    }
+  }, []);
+
+  useEffect(() => {
+    checkHealth();
+    const interval = setInterval(checkHealth, 15000);
+    return () => clearInterval(interval);
+  }, [checkHealth]);
 
   const resetSession = useCallback(() => {
     setAnalysisResult(null);
@@ -70,7 +107,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSelectedFile('demo-project/auth.py');
     setDemoMode(false);
     setScreen('home');
-  }, []);
+    checkHealth();
+  }, [checkHealth]);
 
   return (
     <AppContext.Provider value={{
@@ -82,8 +120,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       testResults, setTestResults,
       isLoading, setIsLoading,
       demoMode, setDemoMode,
+      backendConnected, setBackendConnected,
+      aiProvider, setAiProvider,
       aiAvailable, setAiAvailable,
       aiModel, setAiModel,
+      checkHealth,
       resetSession,
     }}>
       {children}

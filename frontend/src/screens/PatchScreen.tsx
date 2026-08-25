@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { api } from '../api/client';
 
 export function PatchScreen() {
-  const { setScreen, analysisResult, selectedFile, setSelectedFile } = useApp();
+  const { setScreen, analysisResult, selectedFile, setSelectedFile, backendConnected, checkHealth } = useApp();
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState('');
   const [projectFiles, setProjectFiles] = useState<string[]>([]);
@@ -52,6 +52,11 @@ export function PatchScreen() {
 
   const handleApply = async () => {
     setError('');
+
+    if (!backendConnected) {
+      setError("BACKEND OFFLINE. Cannot apply patch while backend is disconnected.");
+      return;
+    }
 
     if (isUnknownTarget) {
       setError("Unable to determine the target file. Select a project file and retry.");
@@ -169,6 +174,18 @@ export function PatchScreen() {
         </div>
       </div>
 
+      {/* Backend Offline Warning Banner */}
+      {!backendConnected && (
+        <div className="card mb-4" style={{ background: 'var(--red-dim)', borderColor: 'rgba(239,68,68,0.4)', padding: '12px 14px' }}>
+          <div className="flex items-center justify-between">
+            <span className="text-red text-xs font-bold">⚠️ BACKEND OFFLINE</span>
+            <button className="btn btn-outline btn-sm" style={{ padding: '4px 8px', minHeight: 26, fontSize: 10 }} onClick={checkHealth}>
+              RETRY CONNECTION
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="card mb-4" style={{ background: 'var(--red-dim)', borderColor: 'rgba(239,68,68,0.4)', padding: '12px 14px' }}>
           <div className="text-red text-xs font-semibold text-center" style={{ lineHeight: 1.5 }}>
@@ -182,8 +199,14 @@ export function PatchScreen() {
         <button id="reject-patch-btn" className="btn btn-red flex-1" onClick={handleReject} disabled={applying}>
           REJECT
         </button>
-        <button id="apply-patch-btn" className="btn btn-yellow flex-[2]" onClick={handleApply} disabled={applying}>
-          {applying ? 'Applying Patch...' : 'APPLY FIX ✓'}
+        <button
+          id="apply-patch-btn"
+          className="btn btn-yellow flex-[2]"
+          onClick={handleApply}
+          disabled={applying || !backendConnected}
+          style={{ opacity: !backendConnected ? 0.6 : 1 }}
+        >
+          {applying ? 'Applying Patch...' : !backendConnected ? 'BACKEND OFFLINE' : 'APPLY FIX ✓'}
         </button>
       </div>
     </div>

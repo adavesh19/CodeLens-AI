@@ -1,10 +1,11 @@
 /**
  * API client for CodeLens AI backend.
- * Handles timeouts, local LLM inference delays, and context-aware error reporting.
+ * Uses central import.meta.env.VITE_API_URL configuration.
+ * Handles timeouts, Render free-tier cold starts, and context-aware error reporting.
  */
 import type { AnalyzeRequest, AnalysisResult, PatchResult, TestResults, ProjectInfo, HealthStatus } from './types';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
 
 async function request<T>(path: string, options?: RequestInit, timeoutMs: number = 30000): Promise<T> {
   const controller = new AbortController();
@@ -17,32 +18,40 @@ async function request<T>(path: string, options?: RequestInit, timeoutMs: number
       ...options,
     });
     clearTimeout(timeoutId);
+
     if (!res.ok) {
       const text = await res.text().catch(() => `HTTP ${res.status}`);
+      if (res.status === 401) throw new Error('AI PROVIDER AUTHENTICATION ERROR');
+      if (res.status === 429) throw new Error('AI RATE LIMIT REACHED');
+      if (res.status === 504) throw new Error('AI REQUEST TIMED OUT');
+      if (res.status === 502 || res.status === 503) throw new Error('BACKEND TEMPORARILY UNAVAILABLE');
       throw new Error(`API error ${res.status}: ${text}`);
     }
+
     return res.json() as Promise<T>;
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
       if (path.includes('/analyze')) {
-        throw new Error('LOCAL AI REQUEST TIMED OUT');
+        throw new Error('AI REQUEST TIMED OUT');
       }
-      throw new Error('BACKEND UNAVAILABLE');
+      throw new Error('BACKEND OFFLINE');
     }
-    if (err.message && err.message.includes('Failed to fetch')) {
-      throw new Error('BACKEND UNAVAILABLE');
+    if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError'))) {
+      throw new Error('BACKEND OFFLINE');
     }
     throw err;
   }
 }
 
 export const api = {
-  health: () => request<HealthStatus>('/health', {}, 5000),
+  baseUrl: BASE_URL,
 
-  // 300s (5 min) timeout for local CPU/GPU LLM inference (codellama model loading + generation)
+  health: () => request<HealthStatus>('/health', {}, 10000),
+
+  // 120s timeout for backend & AI inference
   analyze: (body: AnalyzeRequest) =>
-    request<AnalysisResult>('/analyze', { method: 'POST', body: JSON.stringify(body) }, 300000),
+    request<AnalysisResult>('/analyze', { method: 'POST', body: JSON.stringify(body) }, 120000),
 
   applyPatch: (body: { file: string; old_code: string; new_code: string }) =>
     request<PatchResult>('/apply-patch', { method: 'POST', body: JSON.stringify(body) }, 30000),

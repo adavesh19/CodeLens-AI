@@ -1,7 +1,33 @@
 import { useApp } from '../context/AppContext';
 
 export function WorkspacePanel() {
-  const { patchApplied, testResults, aiAvailable, aiModel, demoMode } = useApp();
+  const { patchApplied, testResults, backendConnected, aiProvider, aiAvailable, aiModel, demoMode } = useApp();
+
+  let badgeText = 'DEMO ENGINE • OFFLINE AI';
+  let bg = 'rgba(245,200,66,0.12)';
+  let color = 'var(--yellow)';
+  let border = '1px solid rgba(245,200,66,0.25)';
+  let description = 'Deterministic engine active for demo reliability';
+
+  if (!backendConnected || aiProvider === 'offline') {
+    badgeText = 'BACKEND OFFLINE';
+    bg = 'rgba(239,68,68,0.12)';
+    color = 'var(--red)';
+    border = '1px solid rgba(239,68,68,0.3)';
+    description = 'Cannot connect to backend API';
+  } else if (aiProvider === 'groq' && aiAvailable) {
+    badgeText = 'CLOUD AI • ONLINE';
+    bg = 'rgba(34,211,238,0.12)';
+    color = 'var(--cyan)';
+    border = '1px solid rgba(34,211,238,0.3)';
+    description = `Model: ${aiModel} (Groq Cloud AI)`;
+  } else if (aiProvider === 'ollama' && aiAvailable) {
+    badgeText = 'LOCAL AI • ONLINE';
+    bg = 'rgba(34,211,238,0.12)';
+    color = 'var(--cyan)';
+    border = '1px solid rgba(34,211,238,0.3)';
+    description = `Model: ${aiModel} (Local Ollama)`;
+  }
 
   return (
     <div className="workspace-panel">
@@ -43,12 +69,14 @@ export function WorkspacePanel() {
         <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: 12, margin: '2px 0' }}>↓</div>
 
         <div className="bridge-item" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-          <div className="bridge-dot active" />
+          <div className={`bridge-dot ${backendConnected ? 'active' : 'offline'}`} />
           <div style={{ flex: 1 }}>
             <div className="text-xs font-bold" style={{ color: 'var(--text)' }}>LAPTOP PROJECT</div>
             <div className="text-xs text-muted">demo-project (/auth.py)</div>
           </div>
-          <span className="badge badge-green" style={{ fontSize: 9 }}>SYNCED</span>
+          <span className={`badge ${backendConnected ? 'badge-green' : 'badge-red'}`} style={{ fontSize: 9 }}>
+            {backendConnected ? 'SYNCED' : 'DISCONNECTED'}
+          </span>
         </div>
       </div>
 
@@ -63,15 +91,15 @@ export function WorkspacePanel() {
               fontWeight: 700,
               padding: '2px 6px',
               borderRadius: 4,
-              background: aiAvailable ? 'rgba(34,211,238,0.12)' : 'rgba(245,200,66,0.12)',
-              color: aiAvailable ? 'var(--cyan)' : 'var(--yellow)',
-              border: `1px solid ${aiAvailable ? 'rgba(34,211,238,0.3)' : 'rgba(245,200,66,0.25)'}`
+              background: bg,
+              color: color,
+              border: border
             }}>
-              {aiAvailable ? 'LOCAL AI • ONLINE' : 'DEMO ENGINE • OFFLINE AI'}
+              {badgeText}
             </span>
           </div>
           <div className="text-xs text-muted">
-            {aiAvailable ? `Model: ${aiModel}` : 'Deterministic engine active for demo reliability'}
+            {description}
           </div>
         </div>
       </div>
